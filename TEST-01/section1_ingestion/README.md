@@ -1,232 +1,102 @@
-\# Section 1 — Ingestion Pipeline
-
-
+Markdown
+# Section 1 — Ingestion Pipeline
 
 Document upload → extract → chunk → embed (primary + fallback) → vector DB.
 
-This is the first third of the RAG documentation chatbot (Track 2). Section 2
+This is the first third of the RAG documentation chatbot (Track 2). Section 2 (retrieval) and Section 3 (LLM answer generation) are built separately and query the same ChromaDB store this service writes to.
 
-(retrieval) and Section 3 (LLM answer generation) are built separately and
+---
 
-query the same ChromaDB store this service writes to.
+## What It Does
 
+1. **Upload** — Accepts PDF, HTML, Markdown, and DOCX files.
+2. **Extract** — Pulls text per file type while retaining page numbers (PDF) and section/heading titles (HTML, MD, DOCX) as metadata. If an HTML file lacks standard tags (`<p>`, `<li>`, `<h1-3>`), it automatically falls back to full-page text extraction.
+3. **Chunk** — Splits text into ~800-character overlapping chunks (~150 character overlap), preserving all metadata attributes on each chunk.
+4. **Embed** — Primary embedder uses OpenAI `text-embedding-3-small`. If `OPENAI_API_KEY` is missing or the call fails (rate limits, timeouts, offline mode), it automatically falls back to the local `sentence-transformers` model (`all-MiniLM-L6-v2`) so ingestion never fails.
+5. **Store** — Sanitizes metadata and writes chunks, embeddings, and metadata into a persistent local ChromaDB collection named `default` at `./chroma_db`.
 
+---
 
-\## What it does
+## Setup & Installation
 
-
-
-1\. \*\*Upload\*\* — accepts PDF, HTML, Markdown, DOCX.
-
-2\. \*\*Extract\*\* — pulls text out per file type, keeping page numbers (PDF) and
-
-&#x20;  section/heading (HTML, MD, DOCX) as metadata. For HTML files that don't
-
-&#x20;  use standard content tags (`<p>`, `<li>`, `<h1-3>`, etc — e.g. div/span-only
-
-&#x20;  layouts), it automatically falls back to extracting all visible page text
-
-&#x20;  rather than failing the upload.
-
-3\. \*\*Chunk\*\* — splits into \~800-character overlapping chunks, metadata carried
-
-&#x20;  along.
-
-4\. \*\*Embed\*\* — primary embedder is OpenAI `text-embedding-3-small`. If that
-
-&#x20;  call fails for any reason (no key, rate limit, network/timeout), it
-
-&#x20;  automatically falls back to a local `sentence-transformers` model
-
-&#x20;  (`all-MiniLM-L6-v2`) so ingestion doesn't hard-fail. This is logged and
-
-&#x20;  also returned in the API response (`used\\\\\\\_fallback\\\\\\\_embedder`).
-
-5\. \*\*Store\*\* — writes chunks + embeddings + metadata into a local, persisted
-
-&#x20;  ChromaDB collection named `default`, stored on disk at `./chroma\\\\\\\_db`.
-
-
-
-
-
-# ```Markdown (we are using local all-MiniLM-L6-v2 )
-
-\## API Configuration
-
-\* \*\*`OPENAI\\\_API\\\_KEY`\*\* (Optional): Used for primary chunk embeddings via `text-embedding-3-small`.
-
-\* \*\*Fallback Behavior\*\*: If `OPENAI\\\_API\\\_KEY` is missing or fails, ingestion automatically falls back to the local `all-MiniLM-L6-v2` model via `sentence-transformers`.
-
-
-
-
-
-# \## Setup
-
-
-
+### 1. Create and activate a virtual environment
 ```bash
-
-cd section1\\\\\\\_ingestion
-
+cd section1_ingestion
 python -m venv venv
+Windows: venv\Scripts\activate
 
-venv\\\\\\\\Scripts\\\\\\\\activate        # Mac/Linux: source venv/bin/activate
+Mac/Linux: source venv/bin/activate
 
+2. Install dependencies
+Make sure to install all required packages specified in requirements.txt:
+
+Bash
 pip install -r requirements.txt
+3. Environment Configuration
+Copy the sample environment file to create your .env:
 
-copy .env.example .env
+Bash
+cp .env.example .env     # On Windows Command Prompt: copy .env.example .env
+API Key Options:
 
-\\\\# edit .env and add your OPENAI\\\\\\\_API\\\\\\\_KEY (optional — fallback works without it)
+To use OpenAI embeddings: Open .env and set OPENAI_API_KEY=your_actual_key.
 
-```
+To run completely keyless / offline: Leave OPENAI_API_KEY empty or unset in .env. The system will automatically use the local all-MiniLM-L6-v2 model.
 
+Running the API
+Start the FastAPI application with Uvicorn:
 
-
-\## Run
-
-
-
-```bash
-
+Bash
 python -m uvicorn app.main:app --reload --port 8000
+API Endpoint: http://localhost:8000
 
-```
+Interactive Swagger Docs: http://localhost:8000/docs
 
+Testing & Usage
+Upload a Document
+Bash
+curl -X POST http://localhost:8000/upload \
+  -F "file=@/path/to/your/document.pdf"
+Sample API Response:
 
-
-Interactive API docs: http://localhost:8000/docs
-
-
-
-\## Test it
-
-
-
-```bash
-
-curl -X POST http://localhost:8000/upload \\\\\\\\
-
-\\\&#x20; -F "file=@/path/to/your/document.pdf"
-
-```
-
-
-
-Response:
-
-
-
-```json
-
+JSON
 {
-
-\\\&#x20; "doc\\\\\\\_id": "a1b2c3d4-...",
-
-\\\&#x20; "filename": "document.pdf",
-
-\\\&#x20; "chunks\\\\\\\_stored": 42,
-
-\\\&#x20; "used\\\\\\\_fallback\\\\\\\_embedder": false,
-
-\\\&#x20; "status": "ready\\\\\\\_for\\\\\\\_retrieval"
-
+  "doc_id": "a1b2c3d4-e5f6-7890-abcd-1234567890ab",
+  "filename": "document.pdf",
+  "chunks_stored": 42,
+  "used_fallback_embedder": false,
+  "status": "ready_for_retrieval"
 }
+(Note: used_fallback_embedder will be true if running without an OPENAI_API_KEY).
 
-```
-
-
-
-List documents currently in the store:
-
-
-
-```bash
-
+List Stored Documents
+Bash
 curl http://localhost:8000/documents
+Testing the Fallback Path
+Unset or leave OPENAI_API_KEY empty in .env.
 
-```
+Upload any file via /upload.
 
+On the first run, sentence-transformers will download the local all-MiniLM-L6-v2 model (~90MB, one-time).
 
+Verify that used_fallback_embedder returns true in the API response.
 
-\## Testing the fallback path
+Output Contract for Section 2 & Section 3
+Each chunk stored in ChromaDB (collection default, path ./chroma_db) follows this schema:
 
+documents: Chunk string content.
 
+embeddings: 1536-dim (OpenAI) or 384-dim (SentenceTransformers) vector array.
 
-Leave `OPENAI\\\\\\\_API\\\\\\\_KEY` unset (or set it to an invalid value) in `.env`, then
+metadatas: { document_name, doc_id, page, section, chunk_index }
 
-upload a file. The first call to `sentence-transformers` will download the
+⚠️ Important: Section 2 and Section 3 cache their ChromaDB connections on initial startup. If you ingest new documents here while Section 2 or 3 are actively running, restart Section 2 and 3 to pick up the new vector embeddings.
 
-`all-MiniLM-L6-v2` model (\~90MB, one-time), then embed locally. Check the
+Architectural Notes & Trade-offs
+Fixed-size chunking: Uses 800-character blocks with 150-character overlap for simplicity and speed.
 
-response — `used\\\\\\\_fallback\\\\\\\_embedder` will be `true`, and the logs will show
+Resilient embedding fallback: A local model boundary ensures document ingestion remains functional even during third-party API outages or offline development.
 
-`Primary embedder failed ... Falling back to local model.`
+Local vector storage: ChromaDB is persisted to disk (./chroma_db) avoiding external infrastructure dependencies while remaining easily swappable for cloud vector DBs (Pinecone, Qdrant, Weaviate).
 
-
-
-\## Output contract for Section 2 \& 3
-
-
-
-Each stored chunk in ChromaDB (collection `default`, path `./chroma\\\\\\\_db`) has:
-
-
-
-\- `documents`: the chunk text
-
-\- `embeddings`: the vector
-
-\- `metadatas`: `{ document\\\\\\\_name, doc\\\\\\\_id, page, section, chunk\\\\\\\_index }`
-
-
-
-Section 2 and Section 3 read from this same collection.
-
-
-
-⚠️ \*\*Important:\*\* Section 2 and Section 3 each cache their ChromaDB
-
-connection when they start up. If you upload a new document here in
-
-Section 1 while Section 2/3 are already running, \*\*restart Section 2 and
-
-Section 3\*\* for the new document to become visible in retrieval/chat.
-
-
-
-\## Architectural notes / trade-offs
-
-
-
-\- \*\*Chunking is simple fixed-size with overlap\*\* (not semantic/recursive
-
-&#x20; splitting) — fast to implement and good enough for a 1–2 day assessment.
-
-&#x20; With more time: recursive character splitting or sentence-boundary aware
-
-&#x20; chunking would preserve context better, especially for tightly-packed
-
-&#x20; structured content like short list items.
-
-\- \*\*Fallback embedder is local\*\* so it doesn't depend on the same third-party
-
-&#x20; API that failed — a real resilience boundary, not just a second API key.
-
-\- \*\*ChromaDB is persisted to local disk\*\* (`./chroma\\\\\\\_db`) rather than an
-
-&#x20; external server — zero infra to run for the assessment, trivially swappable
-
-&#x20; for Pinecone/Qdrant/Weaviate later since the vectorstore access is isolated
-
-&#x20; in one module.
-
-\- \*\*Page numbers\*\* are only available for PDFs; HTML/MD/DOCX get section
-
-&#x20; headings instead — documented in the response format rather than faked.
-
-\- \*\*No OCR.\*\* Scanned/image-only PDFs are not supported — extraction
-
-&#x20; requires a real text layer.
-
+Metadata extraction: Section headers are extracted for HTML, Markdown, and DOCX, while page numbers are extracted specifically for PDF files.
