@@ -7,12 +7,10 @@ from typing import List, Dict, Any, Tuple
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are a helpful documentation assistant.
+SYSTEM_PROMPT = """You are a helpful documentation assistant. 
 Answer the user's question strictly grounded on the provided source contexts.
-If the provided context does not contain enough information to answer, respond ONLY with:
-"This information is not available in the provided documentation."
+If the provided context does not contain enough information to answer, state clearly that you don't know.
 Do not invent information outside of the provided context.
-Do not offer general knowledge, inferred answers, or "related" information as a substitute when the exact answer is missing.
 """
 
 class LLMClient:
