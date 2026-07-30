@@ -1,218 +1,52 @@
-\# Section 2 — Retrieval Pipeline
+Markdown# Section 2 — Retrieval Pipeline
 
+Takes a user's question, embeds it, and returns the most relevant document chunks from the ChromaDB vector store created in Section 1. This service exposes a `/retrieve` endpoint used by Section 3 (answer generation) to fetch context before calling the LLM.
 
+---
 
+## What It Does
 
+1. **Receive Query** — Accepts natural language questions via `POST /retrieve`.
+2. **Embed Query** — Embeds the query using the exact same model logic as Section 1 to ensure vector space alignment:
+   * **Primary:** OpenAI `text-embedding-3-small` (used if `OPENAI_API_KEY` is present and available).
+   * **Fallback:** Local `sentence-transformers` (`all-MiniLM-L6-v2`), automatically triggered if the primary embedder fails or key is missing[cite: 27, 30].
+3. **Vector Similarity Search** — Queries ChromaDB to find the `top_k` closest chunks, calculating normalized similarity scores using $1 / (1 + \text{L2 distance})$.
+4. **BM25 Keyword Fallback** — If vector retrieval fails (e.g., database down, missing collection, connection error), it gracefully falls back to a BM25 keyword search over all indexed chunk texts[cite: 27, 29, 32].
+5. **Return Chunks** — Returns chunks containing text, source metadata (document name, page, section, `doc_id`), similarity scores, and attribution flags (`vector_primary (openai)`, `vector_primary (sentence-transformers)`, or `bm25_fallback`)[cite: 27, 32].
 
-Takes a user's question, embeds it, and returns the most relevant
+---
 
-document chunks from the vector store built by Section 1. This is the
+## Setup & Installation
 
-middle third of the RAG documentation chatbot (Track 2). Section 3
-
-(answer generation) calls this service's `/retrieve` endpoint to get
-
-context before asking the LLM to answer.
-
-
-
-\## What it does
-
-
-
-1\. \*\*Receive a query\*\* — a natural language question via `/retrieve`.
-
-2\. \*\*Embed the query\*\* — using the same model family as Section 1's
-
-&#x20;  ingestion, so query and stored chunks live in the same vector space:
-
-&#x20;  - Primary: OpenAI `text-embedding-3-small` (used if `OPENAI\_API\_KEY`
-
-&#x20;    is set and the call succeeds)
-
-&#x20;  - Fallback: local `sentence-transformers` (`all-MiniLM-L6-v2`),
-
-&#x20;    triggered automatically on any primary failure
-
-3\. \*\*Vector similarity search\*\* — queries the ChromaDB collection
-
-&#x20;  written by Section 1, returns the top-k closest chunks with a
-
-&#x20;  similarity score (`1 / (1 + L2 distance)`).
-
-4\. \*\*BM25 keyword fallback\*\* — if the vector search fails entirely
-
-&#x20;  (DB unreachable, collection error, etc.), it falls back to a
-
-&#x20;  keyword-based BM25 search over the same stored chunk texts, so
-
-&#x20;  retrieval degrades gracefully instead of failing outright.
-
-5\. \*\*Return chunks\*\* — each result includes the chunk text, full
-
-&#x20;  metadata (document name, page, section, doc\_id), a relevance
-
-&#x20;  score, and which retrieval method produced it
-
-&#x20;  (`vector\_primary (...)` or `bm25\_fallback`).
-
-
-## API Configuration
-* Uses the same embedding configuration (`OPENAI_API_KEY` with local `sentence-transformers` fallback) to embed search queries before querying ChromaDB or running BM25 keyword matching.
-
-\## Setup
-
-
-
+### 1. Navigate and activate virtual environment
 ```bash
-
-cd section2\_retrieval
-
+cd section2_retrieval
 python -m venv venv
-
-venv\\Scripts\\activate        # Mac/Linux: source venv/bin/activate
-
-pip install -r requirements.txt
-
-```
-
-
-
-No `.env` file is required to run — `OPENAI\_API\_KEY` is optional (only
-
-used if present; the fallback embedder works without any key).
-
-
-
-\## Run
-
-
-
-```bash
-
-python -m uvicorn app.main:app --reload --port 8001
-
-```
-
-
-
-Interactive API docs: http://localhost:8001/docs
-
-
-
-\## Test it
-
-
-
-```bash
-
-curl -X POST http://localhost:8001/retrieve \\
-
-&#x20; -H "Content-Type: application/json" \\
-
-&#x20; -d '{
-
-&#x20;   "query": "How much does the Pro plan cost?",
-
-&#x20;   "collection\_name": "default",
-
-&#x20;   "top\_k": 5
-
-&#x20; }'
-
-```
-
-
-
-Response:
-
-
-
-```json
-
-{
-
-&#x20; "query": "How much does the Pro plan cost?",
-
-&#x20; "total\_retrieved": 5,
-
-&#x20; "chunks": \[
-
-&#x20;   {
-
-&#x20;     "text": "...",
-
-&#x20;     "metadata": { "document\_name": "...", "page": null, "section": "Pricing", "doc\_id": "...", "chunk\_index": 1 },
-
-&#x20;     "score": 0.5156,
-
-&#x20;     "retrieval\_method": "vector\_primary (sentence-transformers)"
-
-&#x20;   }
-
-&#x20; ]
-
+Windows: venv\Scripts\activate  Mac/Linux: source venv/bin/activate  2. Install dependenciesInstall all required packages specified in requirements.txt:Bashpip install -r requirements.txt
+3. Environment Variables (Optional)No .env file is required to run keyless. However, if you want to use OpenAI embeddings:Create a .env file in section2_retrieval/.Set OPENAI_API_KEY=your_openai_api_key.  If no key is set, the service automatically uses the local all-MiniLM-L6-v2 model[cite: 27, 30].Running the APIStart the FastAPI application on port 8001:Bashpython -m uvicorn app.main:app --reload --port 8001
+Base URL: http://localhost:8001  Interactive API Docs: http://localhost:8001/docs  Testing & UsageRetrieve ChunksBashcurl -X POST http://localhost:8001/retrieve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "How much does the Pro plan cost?",
+    "collection_name": "default",
+    "top_k": 5
+  }'
+Sample API Response:JSON{
+  "query": "How much does the Pro plan cost?",
+  "total_retrieved": 5,
+  "chunks": [
+    {
+      "text": "The Pro plan starts at $29/month...",
+      "metadata": {
+        "document_name": "pricing.pdf",
+        "doc_id": "a1b2c3d4-...",
+        "page": 2,
+        "section": "Pricing Details",
+        "chunk_index": 1
+      },
+      "score": 0.5156,
+      "retrieval_method": "vector_primary (sentence-transformers)"
+    }
+  ]
 }
-
-```
-
-
-
-\## Depends on Section 1
-
-
-
-Reads from the same ChromaDB store that Section 1 writes to:
-
-collection name `default`, path `../section1\_ingestion/chroma\_db`
-
-(configurable via the `CHROMA\_DB\_PATH` environment variable).
-
-
-
-⚠️ \*\*Important — restart after new uploads.\*\* This service opens its
-
-ChromaDB connection once at startup and caches it. If a document is
-
-uploaded via Section 1 \*after\* this service has already started,
-
-it will not appear in retrieval results until this service is
-
-restarted. This was confirmed during testing: newly uploaded documents
-
-were invisible to `/retrieve` until `Ctrl+C` + restart, even though
-
-`GET /documents` on Section 1 correctly showed them as stored.
-
-
-
-\## Architectural notes / trade-offs
-
-
-
-\- \*\*BM25 fallback triggers on vector search failure, not on low
-
-&#x20; relevance.\*\* If the vector DB is reachable but simply returns weak
-
-&#x20; matches, that's treated as a retrieval quality issue for Section 3's
-
-&#x20; groundedness check to handle — not an outage that should activate a
-
-&#x20; different search method. BM25 fallback is specifically for when the
-
-&#x20; vector path is broken (DB down, collection missing, network error).
-
-\- \*\*No result deduplication.\*\* If the same document was uploaded more
-
-&#x20; than once, duplicate chunks may appear in results. Section 1 doesn't
-
-&#x20; dedupe on upload, so this is inherited here.
-
-\- \*\*`top\_k` is a simple integer, no re-ranking.\*\* Retrieved chunks are
-
-&#x20; returned in raw similarity order. With more time, a re-ranking step
-
-&#x20; (e.g. cross-encoder) could improve precision, especially when many
-
-&#x20; documents are mixed in the same collection.
-
+Dependency on Section 1Database path: Reads directly from Section 1's local ChromaDB store at ../section1_ingestion/chroma_db (configurable via CHROMA_DB_PATH env variable).  ⚠️ Important — Restart Service After Ingesting New Files:Section 2 initializes and caches its persistent ChromaDB connection on startup. If you upload new documents in Section 1 while Section 2 is actively running, you must restart Section 2 (Ctrl+C and re-run) for the newly ingested documents to be discoverable in /retrieve queries[cite: 27].  Architectural Notes & Trade-offsResilient Graceful Degradation: BM25 fallback is reserved specifically for vector DB infrastructure/connectivity failures, not low relevance scores[cite: 27, 32]. Low-relevance vector matches are intentionally passed downstream for Section 3's LLM groundedness evaluator to process[cite: 27].Raw Distance Ordering: Returns raw vector similarity results directly ordered by distance without applying secondary cross-encoder re-ranking[cite: 27].No Deduplication: Passes through matching chunks as stored; deduplication is deferred to upstream ingestion or downstream prompt construction[cite: 27].
