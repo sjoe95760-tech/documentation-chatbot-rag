@@ -56,9 +56,7 @@ This project uses \*\*Groq\*\* (`llama-3.1-8b-instant`) as the primary LLM and \
 
 &#x20;  ```env
 
-&#x20;  GROQ\_API\_KEY=gsk\_your\_actual\_groq\_api\_key
-
-&#x20;  OPENAI\_API\_KEY=sk\_your\_actual\_openai\_api\_key
+&#x20;  GROQ_API_KEY=gsk_API_KEY
 
 &#x20;  PRIMARY\_LLM\_MODEL=llama-3.1-8b-instant
 
