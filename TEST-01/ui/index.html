@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Documentation Chatbot</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e37;
+    --text: #e6e8eb;
+    --muted: #9aa0aa;
+    --accent: #5b8cff;
+    --accent-dim: #2c3a63;
+    --user-bubble: #23283a;
+    --bot-bubble: #171d17;
+    --source: #1c2733;
+    --error: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+  }
+  header .status {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .config-bar {
+    display: flex;
+    gap: 8px;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    font-size: 13px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .config-bar label { color: var(--muted); }
+  .config-bar input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .config-bar input[type=text] { width: 260px; }
+  .config-bar input[type=number] { width: 60px; }
+
+  #chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .msg { max-width: 780px; }
+  .msg.user { align-self: flex-end; }
+  .msg.bot { align-self: flex-start; width: 100%; }
+
+  .bubble {
+    padding: 12px 16px;
+    border-radius: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .user .bubble { background: var(--user-bubble); }
+  .bot .bubble { background: var(--bot-bubble); border: 1px solid var(--border); }
+
+  .meta-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .badge.grounded { color: #7ee787; border-color: #244a2c; }
+  .badge.not-grounded { color: #ffcc66; border-color: #4a3c1c; }
+
+  .sources {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sources-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .source-chip {
+    background: var(--source);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .source-chip b { color: var(--text); }
+
+  .followups {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .followup-btn {
+    background: var(--accent-dim);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .followup-btn:hover { background: var(--accent); }
+
+  .typing { color: var(--muted); font-style: italic; }
+  .error-text { color: var(--error); }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    gap: 10px;
+  }
+  #question {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 14px;
+    resize: none;
+  }
+  #question:focus { outline: none; border-color: var(--accent); }
+  #send {
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 0 22px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #send:disabled { opacity: 0.5; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📄 Documentation Chatbot</h1>
+  <span class="status" id="status">Ready</span>
+</header>
+
+<div class="config-bar">
+  <label>Chat endpoint</label>
+  <input type="text" id="endpoint" value="http://127.0.0.1:8002/chat">
+  <label>Collection</label>
+  <input type="text" id="collection" value="default">
+  <label>Top K</label>
+  <input type="number" id="topk" value="3" min="1" max="10">
+</div>
+
+<div id="chat"></div>
+
+<footer>
+  <textarea id="question" rows="1" placeholder="Ask a question about your uploaded documentation..."></textarea>
+  <button id="send">Send</button>
+</footer>
+
+<script>
+const chatEl = document.getElementById('chat');
+const questionEl = document.getElementById('question');
+const sendBtn = document.getElementById('send');
+const statusEl = document.getElementById('status');
+const endpointEl = document.getElementById('endpoint');
+const collectionEl = document.getElementById('collection');
+const topkEl = document.getElementById('topk');
+
+function addUserMessage(text) {
+  const div = document.createElement('div');
+  div.className = 'msg user';
+  div.innerHTML = `<div class="bubble"></div>`;
+  div.querySelector('.bubble').textContent = text;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function addBotPlaceholder() {
+  const div = document.createElement('div');
+  div.className = 'msg bot';
+  div.innerHTML = `<div class="bubble typing">Thinking…</div>`;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
+function renderBotMessage(container, data) {
+  const grounded = data.is_grounded;
+  const badgeClass = grounded ? 'grounded' : 'not-grounded';
+  const badgeText = grounded ? 'Grounded in docs' : 'Not found in docs';
+
+  let sourcesHtml = '';
+  if (data.sources && data.sources.length) {
+    sourcesHtml = `<div class="sources-label">Sources</div><div class="sources">` +
+      data.sources.map(s => {
+        const parts = [];
+        if (s.document) parts.push(`<b>${escapeHtml(s.document)}</b>`);
+        if (s.page !== null && s.page !== undefined) parts.push(`page ${s.page}`);
+        if (s.section) parts.push(escapeHtml(s.section));
+        return `<div class="source-chip">${parts.join(' · ')}</div>`;
+      }).join('') + `</div>`;
+  }
+
+  let followupsHtml = '';
+  if (data.suggested_followups && data.suggested_followups.length) {
+    followupsHtml = `<div class="followups">` +
+      data.suggested_followups.map(q =>
+        `<button class="followup-btn" data-q="${escapeHtml(q)}">${escapeHtml(q)}</button>`
+      ).join('') + `</div>`;
+  }
+
+  const providerBadge = data.llm_provider
+    ? `<span class="badge">${escapeHtml(data.llm_provider)}</span>` : '';
+
+  container.innerHTML = `
+    <div class="bubble">${escapeHtml(data.answer || '')}</div>
+    <div class="meta-row">
+      <span class="badge ${badgeClass}">${badgeText}</span>
+      ${providerBadge}
+    </div>
+    ${sourcesHtml}
+    ${followupsHtml}
+  `;
+
+  container.querySelectorAll('.followup-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      questionEl.value = btn.dataset.q;
+      sendMessage();
+    });
+  });
+
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+function renderBotError(container, message) {
+  container.innerHTML = `<div class="bubble error-text">⚠ ${escapeHtml(message)}</div>`;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function sendMessage() {
+  const question = questionEl.value.trim();
+  if (!question) return;
+
+  addUserMessage(question);
+  questionEl.value = '';
+  sendBtn.disabled = true;
+  statusEl.textContent = 'Waiting for response…';
+
+  const botContainer = addBotPlaceholder();
+  const bubble = botContainer.querySelector('.bubble');
+
+  try {
+    const res = await fetch(endpointEl.value, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: question,
+        collection_name: collectionEl.value || 'default',
+        top_k: parseInt(topkEl.value, 10) || 3
+      })
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    renderBotMessage(botContainer, data);
+    statusEl.textContent = 'Ready';
+  } catch (err) {
+    renderBotError(botContainer, `Could not reach chat service — ${err.message}`);
+    statusEl.textContent = 'Error';
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+questionEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+</script>
+
+</body>
+</html>
